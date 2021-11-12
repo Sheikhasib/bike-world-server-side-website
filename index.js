@@ -25,12 +25,14 @@ async function run() {
     await client.connect();
     // console.log("database connected successfully");
     const database = client.db("bike_world");
+    const exploreProductsCollection = database.collection("explore");
     const productsCollection = database.collection("products");
     const reviewCollection = database.collection("review");
     const ordersCollection = database.collection("orders");
     const usersCollection = database.collection("users");
+   
 
-    // get services
+    // get products
     app.get("/products", async (req, res) => {
       const cursor = productsCollection.find({});
       const products = await cursor.toArray();
@@ -47,17 +49,71 @@ async function run() {
       console.log(result);
     });
 
+    // get explore products
+    app.get("/exploreProducts", async (req, res) => {
+      const cursor = exploreProductsCollection.find({});
+      const exploreProducts = await cursor.toArray();
+      res.send(exploreProducts);
+      console.log(exploreProducts);
+    });
+
+    // get explore single product
+    app.get("/exploreSingleProduct/:id", async (req, res) => {
+      console.log(req.params.id);
+      const result = await exploreProductsCollection
+        .find({ _id: ObjectId(req.params.id) })
+        .toArray();
+      res.send(result[0]);
+      console.log(result);
+    });
+
+    //add productsCollection
+  app.post("/addProducts", async (req, res) => {
+    console.log(req.body);
+    const result = await exploreProductsCollection.insertOne(req.body);
+    res.send(result);
+  });
+
     // review
     app.post("/addSReview", async (req, res) => {
       const result = await reviewCollection.insertOne(req.body);
       res.send(result);
     });
 
-    // insert order and
+    // insert order
     app.post("/addOrders", async (req, res) => {
       const result = await ordersCollection.insertOne(req.body);
       res.send(result);
     });
+
+    // my orders
+    app.get("/myOrder/:email", async (req, res) => {
+      console.log(req.params.email);
+      const result = await ordersCollection
+        .find({ email: req.params.email })
+        .toArray();
+      res.send(result);
+    });
+
+    // all order
+  app.get("/allOrders", async (req, res) => {
+    console.log("hello");
+    const result = await ordersCollection.find({}).toArray();
+    res.send(result);
+  });
+
+  // status update
+  app.put("/statusUpdate/:id", async (req, res) => {
+    const filter = { _id: ObjectId(req.params.id) };
+    console.log(req.params.id);
+    const result = await ordersCollection.updateOne(filter, {
+      $set: {
+        status: req.body.status,
+      },
+    });
+    res.send(result);
+    console.log(result);
+  });
 
     // From useFirebase to get special user information
     app.get("/users/:email", async (req, res) => {
