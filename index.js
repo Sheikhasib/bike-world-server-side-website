@@ -1,11 +1,20 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
+const admin = require("firebase-admin");
 require("dotenv").config();
 const { MongoClient } = require("mongodb");
 const ObjectId = require("mongodb").ObjectId;
 
 const port = process.env.PORT || 5000;
+
+// bike-world-firebase-adminsdk.json
+
+const serviceAccount = require("./bike-world-firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 // middleware
 app.use(cors());
@@ -20,6 +29,18 @@ const client = new MongoClient(uri, {
   useUnifiedTopology: true,
 });
 
+async function verifyToken(req, res, next) {
+  if (req.headers?.authorization?.startsWith("Bearer ")) {
+    const token = req.headers.authorization.split(" ")[1];
+
+    try {
+      const decodedUser = await admin.auth().verifyIdToken(token);
+      req.decodedEmail = decodedUser.email;
+    } catch {}
+  }
+  next();
+}
+
 async function run() {
   try {
     await client.connect();
@@ -30,7 +51,6 @@ async function run() {
     const reviewCollection = database.collection("review");
     const ordersCollection = database.collection("orders");
     const usersCollection = database.collection("users");
-   
 
     // get products
     app.get("/products", async (req, res) => {
@@ -68,11 +88,11 @@ async function run() {
     });
 
     //add productsCollection
-  app.post("/addProducts", async (req, res) => {
-    console.log(req.body);
-    const result = await exploreProductsCollection.insertOne(req.body);
-    res.send(result);
-  });
+    app.post("/addProducts", async (req, res) => {
+      console.log(req.body);
+      const result = await exploreProductsCollection.insertOne(req.body);
+      res.send(result);
+    });
 
     // review
     app.post("/addSReview", async (req, res) => {
@@ -87,7 +107,7 @@ async function run() {
     });
 
     // my orders
-    app.get("/myOrder/:email", async (req, res) => {
+    app.get("/myOrder/:email", verifyToken, async (req, res) => {
       console.log(req.params.email);
       const result = await ordersCollection
         .find({ email: req.params.email })
@@ -96,24 +116,24 @@ async function run() {
     });
 
     // all order
-  app.get("/allOrders", async (req, res) => {
-    console.log("hello");
-    const result = await ordersCollection.find({}).toArray();
-    res.send(result);
-  });
-
-  // status update
-  app.put("/statusUpdate/:id", async (req, res) => {
-    const filter = { _id: ObjectId(req.params.id) };
-    console.log(req.params.id);
-    const result = await ordersCollection.updateOne(filter, {
-      $set: {
-        status: req.body.status,
-      },
+    app.get("/allOrders", async (req, res) => {
+      console.log("hello");
+      const result = await ordersCollection.find({}).toArray();
+      res.send(result);
     });
-    res.send(result);
-    console.log(result);
-  });
+
+    // status update
+    app.put("/statusUpdate/:id", async (req, res) => {
+      const filter = { _id: ObjectId(req.params.id) };
+      console.log(req.params.id);
+      const result = await ordersCollection.updateOne(filter, {
+        $set: {
+          status: req.body.status,
+        },
+      });
+      res.send(result);
+      console.log(result);
+    });
 
     // From useFirebase to get special user information
     app.get("/users/:email", async (req, res) => {
@@ -152,8 +172,30 @@ async function run() {
       res.json(result);
     });
 
-  } 
-  finally {
+    // From MakeAdmin to update user admin
+    app.put("/users/admin", verifyToken, async (req, res) => {
+      const user = req.body;
+      // console.log("put", req.headers.authorization);
+      // console.log("decodedEmail", req.decodedEmail);
+      const requester = req.decodedEmail;
+      if (requester) {
+        const requesterAccount = await usersCollection.findOne({
+          email: requester,
+        });
+        if (requesterAccount.role === "admin") {
+          const filter = { email: user.email };
+          const updateDoc = { $set: { role: "admin" } };
+          const result = await usersCollection.updateOne(filter, updateDoc);
+          res.json(result);
+        }
+      } 
+      else {
+        res
+          .status(403)
+          .json({ message: "you do not have access to make admin" });
+      }
+    });
+  } finally {
     // await client.close();
   }
 }
